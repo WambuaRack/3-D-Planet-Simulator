@@ -1,0 +1,206 @@
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Planet Simulator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.7/dat.gui.min.js"></script>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+    background-color: #000;
+  }
+  #info {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: white;
+    font-size: 16px;
+    background-color: rgba(0, 0, 0, 0.5);
+    padding: 10px;
+    border-radius: 5px;
+  }
+  #planetInfo {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    color: white;
+    font-size: 14px;
+    background-color: rgba(0, 0, 0, 0.5);
+    padding: 10px;
+    border-radius: 5px;
+  }
+</style>
+</head>
+<body>
+<div id="info">3D Planet Simulator</div>
+<div id="planetInfo"></div>
+
+<script>
+let scene, camera, renderer, planets = [], sun, starField;
+const planetNames = ['Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune'];
+
+const settings = {
+  timeScale: 1,
+  showOrbits: true,
+  addPlanet: () => createRandomPlanet(),
+  removePlanet: () => removePlanet()
+};
+
+function init() {
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  camera.position.set(0, 30, 50);
+  camera.lookAt(scene.position);
+
+  createSun();
+  createStarField();
+  createPlanets();
+  setupGUI();
+
+  window.addEventListener('resize', onWindowResize, false);
+}
+
+function createSun() {
+  const geometry = new THREE.SphereGeometry(5, 32, 32);
+  const material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+  sun = new THREE.Mesh(geometry, material);
+  scene.add(sun);
+
+  const sunLight = new THREE.PointLight(0xffffff, 1.5);
+  sun.add(sunLight);
+}
+
+function createStarField() {
+  const geometry = new THREE.BufferGeometry();
+  const vertices = [];
+
+  for (let i = 0; i < 10000; i++) {
+    vertices.push(
+      Math.random() * 600 - 300,
+      Math.random() * 600 - 300,
+      Math.random() * 600 - 300
+    );
+  }
+
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+
+  const material = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
+  starField = new THREE.Points(geometry, material);
+  scene.add(starField);
+}
+
+function createPlanet(index, customParams = {}) {
+  const defaultParams = {
+    size: Math.random() * 2 + 1,
+    distance: (index + 1) * 10,
+    speed: 0.01 / (index + 1),
+    color: Math.random() * 0xffffff,
+    tilt: Math.random() * 0.5 - 0.25,
+    rings: Math.random() < 0.3
+  };
+
+  const params = { ...defaultParams, ...customParams };
+
+  const planetGeometry = new THREE.SphereGeometry(params.size, 32, 32);
+  const planetMaterial = new THREE.MeshPhongMaterial({ color: params.color });
+  const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+
+  planet.position.x = params.distance;
+  planet.rotation.x = params.tilt;
+
+  const pivotObject = new THREE.Object3D();
+  pivotObject.add(planet);
+  scene.add(pivotObject);
+
+  if (params.rings) {
+    const ringGeometry = new THREE.RingGeometry(params.size + 1, params.size + 3, 32);
+    const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+    const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+    ring.rotation.x = Math.PI / 2;
+    planet.add(ring);
+  }
+
+  // Create orbit line
+  const orbitGeometry = new THREE.BufferGeometry();
+  const orbitMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
+  const orbitVertices = [];
+  for (let i = 0; i <= 64; i++) {
+    const angle = (i / 64) * Math.PI * 2;
+    orbitVertices.push(Math.cos(angle) * params.distance, 0, Math.sin(angle) * params.distance);
+  }
+  orbitGeometry.setAttribute('position', new THREE.Float32BufferAttribute(orbitVertices, 3));
+  const orbit = new THREE.Line(orbitGeometry, orbitMaterial);
+  scene.add(orbit);
+
+  planets.push({ planet, pivotObject, params, orbit });
+}
+
+function createPlanets() {
+  for (let i = 0; i < planetNames.length; i++) {
+    createPlanet(i, { name: planetNames[i] });
+  }
+}
+
+function createRandomPlanet() {
+  const index = planets.length;
+  const name = `Planet ${index + 1}`;
+  createPlanet(index, { name });
+}
+
+function removePlanet() {
+  if (planets.length > 0) {
+    const removed = planets.pop();
+    scene.remove(removed.pivotObject);
+    scene.remove(removed.orbit);
+  }
+}
+
+function setupGUI() {
+  const gui = new dat.GUI();
+  gui.add(settings, 'timeScale', 0.1, 10);
+  gui.add(settings, 'showOrbits');
+  gui.add(settings, 'addPlanet');
+  gui.add(settings, 'removePlanet');
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function updatePlanetInfo() {
+  const planetInfo = document.getElementById('planetInfo');
+  planetInfo.innerHTML = planets.map(p => 
+    `${p.params.name}: Distance ${p.params.distance.toFixed(2)}, Size ${p.params.size.toFixed(2)}`
+  ).join('<br>');
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  planets.forEach((planetObj, index) => {
+    const { planet, pivotObject, params, orbit } = planetObj;
+    pivotObject.rotation.y += params.speed * settings.timeScale;
+    planet.rotation.y += 0.01 * settings.timeScale;
+    orbit.visible = settings.showOrbits;
+  });
+
+  sun.rotation.y += 0.001 * settings.timeScale;
+  starField.rotation.y += 0.0001 * settings.timeScale;
+
+  updatePlanetInfo();
+  
+  renderer.render(scene, camera);
+}
+
+init();
+animate();
+</script>
+</body></html>
